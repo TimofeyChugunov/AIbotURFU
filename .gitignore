@@ -1,0 +1,31 @@
+.venv/
+__pycache__/
+.env
+.env.*
+!.env.example
+data/
+*.log
+
+# Local data, screenshots and tool caches
+/artifacts/
+/Microsoft/
+/models/
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.gguf
+*.safetensors
+
+# Local editor settings and credentials
+/.vscode/
+/.idea/
+/.codex/
+/.agents/
+/.aws/
+*.pem
+*.key
+*.p12
+Thumbs.db
+.DS_Store
