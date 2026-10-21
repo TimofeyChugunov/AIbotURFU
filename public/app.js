@@ -17,6 +17,69 @@ let busy = false;
 let materials = [];
 let connected = false;
 let ready = false;
+const chatAttachments = new Map();
+let pendingAttachment = null;
+let attaching = false;
+let attachmentVersion = 0;
+let provider = 'ollama';
+
+function currentAttachment() { return pendingAttachment || chatAttachments.get(current?.id); }
+function clearPendingAttachment() {
+  pendingAttachment = null;
+  attaching = false;
+  attachmentVersion++;
+  $('#chat-document').value = '';
+  $('#attachment-feedback').textContent = '';
+}
+function renderAttachment() {
+  const attachment = currentAttachment();
+  $('#chat-attachment').hidden = !attachment;
+  $('#chat-attachment-name').textContent = attachment?.name || '';
+  $('#attachment-note').hidden = !attachment;
+  $('#attachment-note').textContent = provider === 'live'
+    ? 'Файл доступен до обновления страницы. Внешнему API передаются текстовые фрагменты и параметры DOCX. В общую библиотеку файл не добавляется.'
+    : 'До 10 МБ. Файл доступен в этом диалоге до обновления страницы; в общую библиотеку не добавляется.';
+  $('#prompt').required = !attachment;
+  $('#attach-document').disabled = busy || attaching;
+  $('#remove-attachment').disabled = busy;
+  $('#send').disabled = !ready || busy || attaching;
+}
+$('#attach-document').addEventListener('click', () => $('#chat-document').click());
+$('#remove-attachment').addEventListener('click', () => {
+  if (busy) return;
+  if (current) chatAttachments.delete(current.id);
+  clearPendingAttachment();
+  renderAttachment();
+});
+$('#chat-document').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  if (!file || busy) return;
+  const version = ++attachmentVersion;
+  const epoch = accountEpoch;
+  if (!/\.docx$/i.test(file.name) || !file.size || file.size > 10 * 1024 * 1024) {
+    $('#attachment-feedback').textContent = 'Выберите DOCX размером от 1 байта до 10 МБ.';
+    event.target.value = '';
+    return;
+  }
+  attaching = true;
+  $('#attachment-feedback').textContent = 'Подготовка файла…';
+  renderAttachment();
+  try {
+    const content = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = () => reject(new Error('Не удалось прочитать DOCX.'));
+      reader.readAsDataURL(file);
+    });
+    if (epoch !== accountEpoch || version !== attachmentVersion) return;
+    pendingAttachment = {name: file.name, content};
+    $('#attachment-feedback').textContent = 'Задайте вопрос о работе или отправьте файл для общей проверки.';
+  } catch (error) {
+    if (epoch === accountEpoch && version === attachmentVersion) $('#attachment-feedback').textContent = error.message;
+  } finally {
+    if (version === attachmentVersion) { attaching = false; renderAttachment(); }
+  }
+});
 
 function applyUser(user) {
   const changed = !identityResolved || (currentUser?.id || null) !== (user?.id || null);
@@ -27,6 +90,8 @@ function applyUser(user) {
   $('#account-link').textContent = currentUser ? 'Аккаунт' : 'Вход / Регистрация';
   $('#user-logout').hidden = !currentUser;
   if (!changed) return;
+  chatAttachments.clear();
+  clearPendingAttachment();
   accountEpoch++;
   if (identityResolved) $('#prompt').value = '';
   identityResolved = true;
@@ -96,6 +161,7 @@ function renderHistory() {
     button.title = chat.title;
     button.addEventListener('click', () => {
       if (busy) return;
+      clearPendingAttachment();
       current = chat;
       setMode(chat.mode);
       renderMessages();
@@ -112,7 +178,9 @@ function renderHistory() {
       if (busy || !confirm(`Удалить диалог «${chat.title}» из этого браузера?`)) return;
       const index = chats.findIndex(item => item.id === chat.id);
       chats = chats.filter(item => item.id !== chat.id);
+      chatAttachments.delete(chat.id);
       if (current?.id === chat.id) {
+        clearPendingAttachment();
         current = null;
         $('#prompt').value = '';
         renderMessages();
@@ -144,6 +212,31 @@ function appendMessage(message) {
   const text = document.createElement('div');
   text.className = 'message-text'; text.textContent = message.text;
   article.append(text);
+  if (typeof message.attachmentName === 'string') {
+    const file = document.createElement('p');
+    file.className = 'message-attachment';
+    file.textContent = 'DOCX · ' + message.attachmentName;
+    article.append(file);
+  }
+  if (message.documentReview && typeof message.documentReview === 'object') {
+    const review = message.documentReview;
+    const details = document.createElement('details');
+    details.className = 'document-review';
+    details.open = true;
+    const heading = document.createElement('summary');
+    heading.textContent = 'Проверка DOCX · ' + (review.name || 'документ');
+    details.append(heading);
+    for (const [title, values] of [['Прочитано программно', review.facts], ['Что стоит проверить', review.notes], ['Ограничения проверки', review.limitations]]) {
+      if (!Array.isArray(values) || !values.length) continue;
+      const label = document.createElement('strong'); label.textContent = title;
+      const list = document.createElement('ul');
+      values.filter(value => typeof value === 'string').slice(0, 30).forEach(value => {
+        const item = document.createElement('li'); item.textContent = value; list.append(item);
+      });
+      details.append(label, list);
+    }
+    article.append(details);
+  }
   if (Array.isArray(message.sources) && message.sources.length) {
     const sources = document.createElement('div'); sources.className = 'sources';
     const heading = document.createElement('div');
@@ -168,6 +261,7 @@ function appendMessage(message) {
   $('#messages').append(article);
 }
 function renderMessages() {
+  renderAttachment();
   $('#messages').replaceChildren();
   $('#welcome').hidden = !!current?.messages.length;
   current?.messages.forEach(appendMessage);
@@ -185,6 +279,7 @@ async function api(path, options = {}) {
 async function refreshStatus() {
   try {
     const status = await api('/api/status');
+    provider = status.provider;
     applyUser(status.user);
     connected = true;
     ready = status.ready;
@@ -195,7 +290,7 @@ async function refreshStatus() {
       : status.provider === 'ollama'
         ? (ready ? 'Qwen3 · ИИ работает на этом компьютере. Материалы не отправляются в облако. Проверяй важные факты.' : status.error || 'Запусти Ollama, затем скачай qwen3:8b и обнови страницу.')
         : 'Вопрос, последние сообщения и найденные фрагменты материалов отправляются OpenAI. Проверяй важные факты.';
-    $('#send').disabled = !status.ready;
+    $('#send').disabled = !status.ready || busy || attaching;
   } catch {
     connected = false;
     ready = false;
@@ -240,11 +335,13 @@ $('#composer-materials').addEventListener('click', showMaterials);
 $('#close-dialog').addEventListener('click', () => $('#materials-dialog').close());
 $('#new-chat').addEventListener('click', () => {
   if (busy) return;
+  clearPendingAttachment();
   current = null; $('#prompt').value = ''; renderMessages(); closeMenu(); $('#prompt').focus();
 });
 $('#clear-history').addEventListener('click', () => {
   if (busy || !chats.length) return;
   if (confirm('Удалить все диалоги из этого браузера?')) {
+    chatAttachments.clear(); clearPendingAttachment();
     chats = []; current = null; save(); renderHistory(); renderMessages();
   }
 });
@@ -257,29 +354,36 @@ $('#prompt').addEventListener('keydown', e => {
 });
 $('#chat-form').addEventListener('submit', async e => {
   e.preventDefault();
-  const message = $('#prompt').value.trim();
-  if (!message || busy) return;
+  const attachment = currentAttachment();
+  const message = $('#prompt').value.trim() || (attachment ? 'Проверь содержание и оформление работы. Дай короткие замечания и советы по исправлению.' : '');
+  if (!message || busy || attaching) return;
   const submittedAccount = currentUser?.id || null;
   busy = true;
+  renderAttachment();
   await refreshStatus();
-  if (!ready || submittedAccount !== (currentUser?.id || null)) { busy = false; return; }
+  if (!ready || submittedAccount !== (currentUser?.id || null)) { busy = false; renderAttachment(); return; }
   busy = true; $('#send').disabled = true; $('#mode-select').disabled = true;
   if (!current) {
     current = {id: crypto.randomUUID(), title: message.slice(0, 60), mode, messages: []};
     chats.unshift(current); chats = chats.slice(0, 30);
+    const kept = new Set(chats.map(chat => chat.id));
+    for (const id of chatAttachments.keys()) if (!kept.has(id)) chatAttachments.delete(id);
   }
+  if (attachment) chatAttachments.set(current.id, attachment);
+  pendingAttachment = null;
   const history = current.messages.slice(-12).map(m => ({role: m.role, content: m.text}));
   const requestEpoch = accountEpoch;
   current.mode = mode;
-  current.messages.push({role: 'user', text: message});
+  current.messages.push({role: 'user', text: message, ...(attachment ? {attachmentName: attachment.name} : {})});
   $('#prompt').value = ''; renderMessages(); renderHistory(); save();
   const pending = document.createElement('div'); pending.className = 'pending'; pending.textContent = 'Подготовка ответа… Первый запуск локальной модели может занять до 3 минут.';
   $('#messages').append(pending); scrollToEnd();
   try {
     if (!connected) await refreshStatus();
-    const result = await api('/api/chat', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message, mode, history})});
+    const result = await api('/api/chat', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message, mode, history, ...(attachment ? {attachment} : {})})});
     if (requestEpoch !== accountEpoch) return;
-    const response = {role: 'assistant', text: result.text, demo: result.demo, sources: result.sources};
+    const response = {role: 'assistant', text: result.text, demo: result.demo, sources: result.sources,
+      ...(result.document_review ? {documentReview: result.document_review} : {})};
     current.messages.push(response);
     // Keep browser storage bounded. The full current message remains visible until this limit is reached.
     current.messages = current.messages.slice(-80);
@@ -294,6 +398,7 @@ $('#chat-form').addEventListener('submit', async e => {
   } finally {
     pending.remove(); busy = false; $('#send').disabled = false; $('#mode-select').disabled = false;
     renderHistory();
+    renderAttachment();
     scrollToEnd(); $('#prompt').focus();
   }
 });

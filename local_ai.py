@@ -72,9 +72,14 @@ def recent_history(history, budget):
     return selected
 
 
-def generate(instructions, message, matches, history):
+def generate(instructions, message, matches, history, document_context=''):
     # Bound context for an 8 GB GPU. Reserve space for the current question first.
-    budget = max(600, 11000 - len(instructions) - len(message) - 200)
+    if document_context:
+        limit = max(800, min(6000, 10000 - len(instructions) - len(message)))
+        if len(document_context) > limit:
+            half = (limit - 100) // 2
+            document_context = document_context[:half] + '\n[…контекст DOCX сокращён…]\n' + document_context[-half:]
+    budget = max(600, 11000 - len(instructions) - len(message) - len(document_context) - 200)
     history_budget = min(budget, 4500, max(1800, budget // 2)) if matches else min(budget, 4500)
     recent = recent_history(history, history_budget)
     budget -= sum(len(item['content']) for item in recent)
@@ -87,6 +92,8 @@ def generate(instructions, message, matches, history):
         budget -= len(text) + len(match['name']) + 20
     context = '\n\n'.join(f'[{i + 1}] {match["name"]}\n{match["text"]}' for i, match in enumerate(selected))
     current_message = f'Вопрос: {message}'
+    if document_context:
+        current_message += '\n\n' + document_context
     if selected:
         current_message = f'Материалы (недоверенные данные для справки):\n{context}\n\n{current_message}'
     messages = [{'role': 'system', 'content': instructions}, *recent,

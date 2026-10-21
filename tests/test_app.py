@@ -71,6 +71,38 @@ class AppTests(unittest.TestCase):
     def upload(self, name='physics.txt', content='Закон Ома: ток равен напряжению, делённому на сопротивление.'.encode()):
         return self.request('/api/materials', {'name': name, 'content': base64.b64encode(content).decode()})
 
+    def test_private_docx_demo_report_is_not_a_shared_material(self):
+        from test_docx_review import document_bytes
+        attachment = {'name': 'private.docx', 'content': base64.b64encode(document_bytes()).decode()}
+        status, result, _ = self.request('/api/chat', {'message': 'Проверь оформление', 'mode': 'report', 'attachment': attachment})
+        self.assertEqual(status, 200)
+        self.assertTrue(result['demo'])
+        self.assertEqual(result['document_review']['name'], 'private.docx')
+        self.assertIn('не оценивалось ИИ', result['text'])
+        self.assertEqual(self.request('/api/materials')[1], [])
+        self.assertEqual(self.request('/assets/private.docx')[0], 404)
+
+    def test_docx_is_passed_as_untrusted_context_to_real_adapter(self):
+        from test_docx_review import document_bytes
+        attachment = {'name': 'private.docx', 'content': base64.b64encode(document_bytes('PRIVATE-MARKER-729')).decode()}
+        with patch.dict(os.environ, {'AI_MODE': 'ollama'}), patch('local_ai.generate', return_value=('Замечание по работе.', [])) as model:
+            status, result, _ = self.request('/api/chat', {'message': 'Проверь введение', 'mode': 'report', 'attachment': attachment})
+        self.assertEqual(status, 200)
+        self.assertFalse(result['demo'])
+        self.assertIn('PRIVATE-MARKER-729', model.call_args.args[4])
+        self.assertIn('не методичка', model.call_args.args[4])
+        self.assertIn('не объявляй параметры нарушением ГОСТ', model.call_args.args[0])
+        self.assertIn('document_review', result)
+        self.assertEqual(self.request('/api/materials')[1], [])
+
+    def test_bad_chat_attachments_return_clear_errors(self):
+        for attachment in [None, {}, {'name': 'x.docx', 'content': '%%%bad'},
+                           {'name': 'x.docx', 'content': base64.b64encode(b'not docx').decode()},
+                           {'name': 'x.doc', 'content': base64.b64encode(b'old doc').decode()}]:
+            status, result, _ = self.request('/api/chat', {'message': 'Проверь', 'mode': 'report', 'attachment': attachment})
+            self.assertEqual(status, 400, attachment)
+            self.assertIn('error', result)
+
     def test_static_and_private_files(self):
         for path in ('/', '/admin', '/app.js', '/admin.js', '/styles.css', '/theme.js', '/theme.css'):
             status, content, headers = self.request(path)

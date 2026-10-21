@@ -60,6 +60,7 @@ html[data-theme="dark"] .file-button{background:#35415b;color:#c2d1f3;border-col
 html[data-theme="dark"] .material-row button{border-color:#84514f;color:#f0b5af}
 html[data-theme="dark"] .material-row .reset-user-password{border-color:#526385;color:#bdceff}
 html[data-theme="dark"] .reset-password-form input{background:#202227;border-color:#515766;color:#eef0f7}
+html[data-theme="dark"] .chat-attachment{background:#303a54;color:#becfff}
 html[data-theme="dark"] .feedback{color:#a4cfb0}
 html[data-theme="dark"] .feedback.error{color:#f0b5af}
 html[data-theme="dark"] .document-preview pre{background:#282b31;border-color:#454955;color:#e4e8f1}

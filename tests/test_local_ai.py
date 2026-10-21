@@ -4,6 +4,14 @@ import local_ai
 
 
 class LocalAITests(unittest.TestCase):
+    def test_private_docx_context_is_bounded_and_only_in_user_message(self):
+        with patch('local_ai.request_json', return_value={'done': True, 'message': {'content': 'Ответ'}}) as endpoint:
+            local_ai.generate('System instructions', 'Review this file', [], [], 'PRIVATE-DOCX-729 ' * 1500)
+        messages = endpoint.call_args.args[1]['messages']
+        self.assertNotIn('PRIVATE-DOCX-729', messages[0]['content'])
+        self.assertIn('PRIVATE-DOCX-729', messages[-1]['content'])
+        self.assertLess(len(messages[-1]['content']), 6200)
+
     def test_installed_model_health(self):
         with patch('local_ai.request_json', return_value={'models': [{'name': 'qwen3:8b'}]}):
             self.assertTrue(local_ai.health()['ready'])
