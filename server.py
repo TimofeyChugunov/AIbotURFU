@@ -350,10 +350,11 @@ class Handler(BaseHTTPRequestHandler):
                 files = {'/': 'index.html', '/admin': 'admin.html', '/admin/': 'admin.html',
                          '/auth': 'auth.html', '/auth/': 'auth.html', '/auth.js': 'auth.js', '/auth.css': 'auth.css',
                          '/styles.css': 'styles.css', '/app.js': 'app.js', '/admin.js': 'admin.js',
-                         '/theme.js': 'theme.js', '/theme.css': 'theme.css'}
+                         '/theme.js': 'theme.js', '/theme.css': 'theme.css',
+                         '/assets/logo.png': 'assets/logo.png'}
                 if path in files:
                     suffix = Path(files[path]).suffix
-                    types = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8'}
+                    types = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png'}
                     return self.send(200, (ROOT / 'public' / files[path]).read_bytes(), types[suffix])
                 raise AppError('Страница не найдена.', 404)
             if method == 'DELETE' and path.startswith('/api/materials/'):

@@ -106,8 +106,12 @@ function appendMessage(message) {
   if (message.role === 'assistant') {
     const label = document.createElement('div');
     label.className = 'message-label';
-    const icon = document.createElement('span');
-    icon.className = 'mini-logo'; icon.textContent = 'ai';
+    const icon = document.createElement('img');
+    icon.className = 'mini-logo';
+    icon.src = '/assets/logo.png';
+    icon.alt = '';
+    icon.width = 28;
+    icon.height = 28;
     label.append(icon, document.createTextNode(message.demo ? 'AIbotURFU · ДЕМО' : 'AIbotURFU'));
     article.append(label);
   }

@@ -90,21 +90,11 @@ button:focus-visible,a:focus-visible,select:focus-visible,label.file-button:focu
 }
 
 .brand-icon {
-  display: grid;
-  place-content: center;
-  background: #23262c;
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
-  color: white;
-  font-size: 23px;
-  letter-spacing: -3px;
-  padding-right: 3px;
-}
-
-.brand-icon>span {
-  color: #a8bbff;
-  display: contents;
+  display: block;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 
 .new-chat {
@@ -634,14 +624,11 @@ h1 {
 }
 
 .message-label .mini-logo {
-  display: grid;
-  place-content: center;
-  width: 24px;
-  height: 24px;
-  background: #252a34;
-  color: #fff;
-  border-radius: 7px;
-  font-size: 11px;
+  display: block;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
 }
 
 .message-text {

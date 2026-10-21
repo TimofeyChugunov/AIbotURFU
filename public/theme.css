@@ -6,7 +6,6 @@
 html[data-theme="dark"]{color-scheme:dark;color:#e7e9ee;background:#202123;--line:#3a3c43;--muted:#a5a8b3;--accent:#9aaeff}
 html[data-theme="dark"] body{background:#202123}
 html[data-theme="dark"] .sidebar{background:#18191b;border-color:#32343b}
-html[data-theme="dark"] .brand-icon{background:#353842;color:#fff}
 html[data-theme="dark"] .new-chat{background:#24262b;border-color:#424550;box-shadow:none}
 html[data-theme="dark"] .nav-item{color:#b1b5c0}
 html[data-theme="dark"] .nav-item.active,
@@ -40,7 +39,6 @@ html[data-theme="dark"] .send-button:hover,
 html[data-theme="dark"] .primary-button:hover{background:#dce4f9}
 html[data-theme="dark"] .message.user{background:#34373f}
 html[data-theme="dark"] .message.assistant .message-label{color:#bbc6dd}
-html[data-theme="dark"] .message-label .mini-logo{background:#444c60;color:#fff}
 html[data-theme="dark"] .message.error{background:#422e30;color:#f1b1ad}
 html[data-theme="dark"] .sources{color:#b4bfd5}
 html[data-theme="dark"] .sources a,
