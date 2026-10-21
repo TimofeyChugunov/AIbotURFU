@@ -1004,6 +1004,50 @@ dialog>p {
   font-weight: 550;
 }
 
+.user-row {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.user-row .file-info {
+  flex-basis: 180px;
+}
+
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.material-row .reset-user-password {
+  border-color: #dce3f3;
+  color: #4968b4;
+}
+
+.reset-password-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.reset-password-form label {
+  font-size: 13px;
+}
+
+.reset-password-form input {
+  min-width: 0;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #dfe3ec;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+}
+
+.reset-password-form .feedback:empty {
+  display: none;
+}
+
 .admin-footer {
   text-align: center;
   font-size: 10px;

@@ -36,9 +36,9 @@ class AccountTests(unittest.TestCase):
         with server.connect() as db:
             db.execute('DELETE FROM user_sessions'); db.execute('DELETE FROM users')
 
-    def request(self, path, data=None, headers=None):
+    def request(self, path, data=None, headers=None, method=None):
         req = urllib.request.Request(self.url + path, data=json.dumps(data).encode() if data is not None else None,
-                                     headers={'Content-Type': 'application/json', 'Cookie': self.cookie, **(headers or {})})
+                                     headers={'Content-Type': 'application/json', 'Cookie': self.cookie, **(headers or {})}, method=method)
         try:
             response = urllib.request.urlopen(req, timeout=10)
         except urllib.error.HTTPError as error:
@@ -53,6 +53,71 @@ class AccountTests(unittest.TestCase):
         if status == 201:
             self.cookie = headers['Set-Cookie'].split(';')[0]
         return status, result, headers
+
+    def admin_cookie(self):
+        status, _, headers = self.request('/api/login', {'password': 'test-admin-password'})
+        self.assertEqual(status, 200)
+        return headers['Set-Cookie'].split(';')[0]
+
+    def test_admin_user_routes_reject_guests_and_students(self):
+        for registered in (False, True):
+            if registered:
+                self.register()
+            for path, data, method in [
+                ('/api/admin/users', None, 'GET'),
+                ('/api/admin/users/' + 'a' * 32, None, 'DELETE'),
+                ('/api/admin/users/' + 'a' * 32 + '/password', {'password': 'new-password-729'}, 'POST'),
+            ]:
+                self.assertEqual(self.request(path, data, method=method)[0], 401)
+
+    def test_admin_list_exposes_only_public_account_metadata(self):
+        self.register()
+        cookie = self.admin_cookie()
+        status, users, _ = self.request('/api/admin/users', headers={'Cookie': cookie})
+        self.assertEqual(status, 200)
+        self.assertEqual(len(users), 1)
+        self.assertEqual(set(users[0]), {'id', 'username', 'created'})
+        self.assertEqual(users[0]['username'], 'Student_01')
+
+    def test_admin_password_reset_revokes_all_target_sessions(self):
+        _, result, _ = self.register()
+        user_id = result['user']['id']
+        first_session = self.cookie
+        _, _, headers = self.request('/api/auth/login', {'username': 'Student_01', 'password': 'student-test-password'}, headers={'Cookie': ''})
+        second_session = headers['Set-Cookie'].split(';')[0]
+        self.cookie = ''  # Another browser must not rotate the first user's session.
+        self.register('Other_user')
+        other_session = self.cookie
+        admin_cookie = self.admin_cookie()
+        path = '/api/admin/users/' + user_id + '/password'
+        self.assertEqual(self.request(path, {'password': 'short'}, headers={'Cookie': admin_cookie})[0], 400)
+        self.assertIsNotNone(self.request('/api/auth/me', headers={'Cookie': first_session})[1]['user'])
+        self.assertEqual(self.request(path, {'password': 'new-password-729'}, headers={'Cookie': admin_cookie})[0], 200)
+        for cookie in (first_session, second_session):
+            self.assertIsNone(self.request('/api/auth/me', headers={'Cookie': cookie})[1]['user'])
+        self.assertIsNotNone(self.request('/api/auth/me', headers={'Cookie': other_session})[1]['user'])
+        self.assertEqual(self.request('/api/auth/login', {'username': 'Student_01', 'password': 'student-test-password'})[0], 401)
+        self.assertEqual(self.request('/api/auth/login', {'username': 'Student_01', 'password': 'new-password-729'})[0], 200)
+        with server.connect() as db:
+            stored = db.execute('SELECT password_hash FROM users WHERE id=?', (user_id,)).fetchone()[0]
+        self.assertNotEqual(stored, 'new-password-729')
+        self.assertTrue(accounts.verify_password('new-password-729', stored))
+
+    def test_admin_delete_cascades_sessions_and_preserves_other_users(self):
+        _, result, _ = self.register()
+        user_id = result['user']['id']
+        old_session = self.cookie
+        self.register('Other_user')
+        cookie = self.admin_cookie()
+        path = '/api/admin/users/' + user_id
+        self.assertEqual(self.request(path, headers={'Cookie': cookie}, method='DELETE')[0], 200)
+        self.assertIsNone(self.request('/api/auth/me', headers={'Cookie': old_session})[1]['user'])
+        with server.connect() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM user_sessions WHERE user_id=?', (user_id,)).fetchone()[0], 0)
+        self.assertEqual(self.request('/api/auth/login', {'username': 'Student_01', 'password': 'student-test-password'})[0], 401)
+        self.assertEqual(self.request('/api/admin/users', headers={'Cookie': cookie})[1][0]['username'], 'Other_user')
+        self.assertEqual(self.request(path, headers={'Cookie': cookie}, method='DELETE')[0], 404)
+        self.assertEqual(self.request(path + '/password', {'password': 'valid-password-729'}, headers={'Cookie': cookie})[0], 404)
 
     def test_register_login_and_private_cookie(self):
         status, result, headers = self.register()

@@ -302,6 +302,24 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.local_request()
             path = urlparse(self.path).path
+            if path == '/api/admin/users' or path.startswith('/api/admin/users/'):
+                self.require_admin()
+                if method == 'GET' and path == '/api/admin/users':
+                    with connect() as db:
+                        return self.send(200, accounts.list_users(db))
+                user_route = re.fullmatch(r'/api/admin/users/([a-f0-9]{32})(/password)?', path)
+                if user_route:
+                    user_id, action = user_route.groups()
+                    if method == 'POST' and action == '/password':
+                        data = self.body()
+                        with connect() as db:
+                            accounts.reset_password(db, user_id, data.get('password'))
+                        return self.send(200, {'ok': True})
+                    if method == 'DELETE' and action is None:
+                        with connect() as db:
+                            accounts.delete_user(db, user_id)
+                        return self.send(200, {'ok': True})
+                raise AppError('Маршрут не найден.', 404)
             if method == 'GET':
                 if path == '/api/status':
                     ai_mode = os.environ.get('AI_MODE', 'ollama').lower()

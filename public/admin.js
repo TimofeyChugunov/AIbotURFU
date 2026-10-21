@@ -3,6 +3,8 @@ const $ = selector => document.querySelector(selector);
 let admin = false;
 let uploading = false;
 let selected = [];
+let adminEpoch = 0;
+let passwordUser = null;
 function feedback(message, error = false) { $('#feedback').textContent = message; $('#feedback').classList.toggle('error', error); }
 async function api(path, options = {}) {
   const response = await fetch(path, {...options, signal: AbortSignal.timeout(75000)});
@@ -11,7 +13,120 @@ async function api(path, options = {}) {
   return data;
 }
 function post(path, data) { return api(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}); }
-function setAdmin(value) { admin = value; $('#login-panel').hidden = value; $('#manage-panel').hidden = !value; }
+function setAdmin(value) {
+  admin = value;
+  adminEpoch++;
+  $('#login-panel').hidden = value;
+  $('#manage-panel').hidden = !value;
+  $('#users-panel').hidden = !value;
+  if (!value) {
+    $('#admin-users').replaceChildren();
+    $('#users-total').textContent = '0';
+    $('#users-feedback').textContent = '';
+    $('#reset-password-dialog').close();
+    $('#reset-password-form').reset();
+    passwordUser = null;
+  }
+}
+
+function usersFeedback(message, error = false) {
+  $('#users-feedback').textContent = message;
+  $('#users-feedback').classList.toggle('error', error);
+}
+
+async function renderUsers() {
+  if (!admin) return;
+  const epoch = adminEpoch;
+  const users = await api('/api/admin/users');
+  if (!admin || epoch !== adminEpoch) return;
+  $('#users-total').textContent = users.length;
+  $('#admin-users').replaceChildren();
+  if (!users.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'Зарегистрированных пользователей пока нет.';
+    $('#admin-users').append(empty);
+  }
+  users.forEach(user => {
+    const row = document.createElement('div');
+    row.className = 'material-row user-row';
+    const info = document.createElement('div');
+    info.className = 'file-info';
+    const name = document.createElement('strong');
+    name.textContent = user.username;
+    const date = document.createElement('small');
+    date.textContent = 'Регистрация: ' + new Date(user.created * 1000).toLocaleString('ru-RU');
+    info.append(name, date);
+    const actions = document.createElement('div');
+    actions.className = 'user-actions';
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'reset-user-password';
+    reset.textContent = 'Сбросить пароль';
+    reset.setAttribute('aria-label', 'Сбросить пароль ' + user.username);
+    reset.addEventListener('click', () => {
+      passwordUser = user;
+      $('#reset-password-form').reset();
+      $('#password-feedback').textContent = '';
+      $('#reset-password-user').textContent = 'Пользователь: ' + user.username;
+      $('#reset-password-dialog').showModal();
+      $('#new-user-password').focus();
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'delete-user';
+    remove.textContent = 'Удалить';
+    remove.setAttribute('aria-label', 'Удалить пользователя ' + user.username);
+    remove.addEventListener('click', async () => {
+      if (!confirm(`Удалить аккаунт «${user.username}»? Все его сеансы будут завершены. История чатов в браузере не удаляется.`)) return;
+      reset.disabled = true;
+      remove.disabled = true;
+      try {
+        await api('/api/admin/users/' + user.id, {method: 'DELETE'});
+        if (admin && epoch === adminEpoch) {
+          await renderUsers();
+          usersFeedback('Аккаунт удалён.');
+        }
+      } catch (error) { if (admin) usersFeedback(error.message, true); }
+      finally { reset.disabled = false; remove.disabled = false; }
+    });
+    actions.append(reset, remove);
+    row.append(info, actions);
+    $('#admin-users').append(row);
+  });
+}
+
+$('#refresh-users').addEventListener('click', async () => {
+  try { await renderUsers(); usersFeedback('Список обновлён.'); }
+  catch (error) { if (admin) usersFeedback(error.message, true); }
+});
+$('#cancel-password').addEventListener('click', () => $('#reset-password-dialog').close());
+$('#reset-password-dialog').addEventListener('close', () => {
+  $('#reset-password-form').reset();
+  passwordUser = null;
+});
+$('#reset-password-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!admin || !passwordUser) return;
+  const password = $('#new-user-password').value;
+  if (password !== $('#confirm-user-password').value) {
+    $('#password-feedback').textContent = 'Пароли не совпадают.';
+    return;
+  }
+  const epoch = adminEpoch;
+  const user = passwordUser;
+  $('#save-user-password').disabled = true;
+  try {
+    await post('/api/admin/users/' + user.id + '/password', {password});
+    if (admin && epoch === adminEpoch) {
+      $('#reset-password-dialog').close();
+      $('#reset-password-form').reset();
+      usersFeedback(`Пароль пользователя «${user.username}» изменён. Все его сеансы завершены.`);
+    }
+  } catch (error) {
+    if (admin && epoch === adminEpoch) $('#password-feedback').textContent = error.message;
+  } finally { $('#save-user-password').disabled = false; }
+});
 async function renderMaterials() {
   const files = await api('/api/materials');
   $('#total').textContent = files.length;
@@ -49,7 +164,7 @@ async function renderMaterials() {
 }
 $('#login-form').addEventListener('submit', async e => {
   e.preventDefault(); const button = e.submitter; button.disabled = true;
-  try { await post('/api/login', {password: $('#password').value}); $('#password').value = ''; setAdmin(true); await renderMaterials(); feedback('Вход выполнен. Можно загружать материалы.'); }
+  try { await post('/api/login', {password: $('#password').value}); $('#password').value = ''; setAdmin(true); await Promise.all([renderMaterials(), renderUsers()]); feedback('Вход выполнен. Можно управлять материалами и пользователями.'); }
   catch (error) { feedback(error.message, true); }
   finally { button.disabled = false; }
 });
@@ -97,6 +212,6 @@ zone.addEventListener('submit', async e => {
   try { await renderMaterials(); } catch (error) { feedback(results.join('\n') + '\n' + error.message, true); }
 });
 (async () => {
-  try { const status = await api('/api/status'); setAdmin(status.admin); await renderMaterials(); }
+  try { const status = await api('/api/status'); setAdmin(status.admin); await Promise.all([renderMaterials(), renderUsers()]); }
   catch (error) { feedback('Не удалось подключиться к серверу: ' + error.message, true); }
 })();

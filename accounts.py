@@ -113,3 +113,22 @@ def login(db, username, password, previous_token=''):
         raise AccountError('Неверный Username или пароль.', 401)
     user = {'id': row['id'], 'username': row['username']}
     return user, create_session(db, user['id'], previous_token)
+
+
+def list_users(db):
+    return [dict(row) for row in db.execute(
+        'SELECT id, username, created FROM users ORDER BY created DESC, id')]
+
+
+def reset_password(db, user_id, password):
+    validate_password(password)
+    encoded = hash_password(password)
+    changed = db.execute('UPDATE users SET password_hash=? WHERE id=?', (encoded, user_id)).rowcount
+    if not changed:
+        raise AccountError('Пользователь не найден.', 404)
+    db.execute('DELETE FROM user_sessions WHERE user_id=?', (user_id,))
+
+
+def delete_user(db, user_id):
+    if not db.execute('DELETE FROM users WHERE id=?', (user_id,)).rowcount:
+        raise AccountError('Пользователь не найден.', 404)
