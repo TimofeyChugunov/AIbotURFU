@@ -6,6 +6,8 @@ import sys
 import tempfile
 import threading
 import urllib.request
+import io
+from docx import Document
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,9 +38,22 @@ def main():
             assert result['demo'] is False and result['provider'] == 'ollama'
             assert result['document_review']['name'] == 'sample.docx'
             assert 'DOCX-CHECK-729' in result['text'], result['text']
+            review = result['document_review']
+            assert review['ai_comments'], 'Expected an anchored content comment for the missing tasks in the test file.'
+            export_payload = {'attachment': payload['attachment'], 'feedback': {
+                'source_hash': review['source_hash'], 'summary': result['text'],
+                'comments': review['ai_comments'], 'demo': False}}
+            request = urllib.request.Request(f'http://127.0.0.1:{httpd.server_port}/api/chat/document/export',
+                data=json.dumps(export_payload).encode(), headers={'Content-Type': 'application/json'})
+            with opener.open(request, timeout=30) as response:
+                checked = Document(io.BytesIO(response.read()))
+            assert len(checked.comments) >= 1
+            assert any('Рекомендация ИИ' in comment.text for comment in checked.comments)
+            assert 'DOCX-CHECK-729' in checked.paragraphs[1].text
             with server.connect() as db:
                 assert db.execute('SELECT count(*) FROM materials').fetchone()[0] == 0
             print(result['text'])
+            print('Anchored AI comments:', len(review['ai_comments']), '; Word comments:', len(checked.comments))
             print('Real DOCX review passed; private document was not stored in materials.')
         finally:
             httpd.shutdown(); httpd.server_close(); thread.join()

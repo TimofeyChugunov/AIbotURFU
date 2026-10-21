@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server
+from docx import Document
 from playwright.sync_api import expect, sync_playwright
 from test_docx_review import document_bytes
 
@@ -30,13 +31,23 @@ def main():
                     page.on('pageerror', lambda error: errors.append(str(error)))
                     page.goto(url)
                     expect(page.locator('#send')).to_be_enabled()
-                    content = document_bytes('Личная работа PRIVATE-CHECK-729. Цель и задачи исследования.')
+                    content = document_bytes('Личная работа PRIVATE-CHECK-729. ПИЗДОЙ. Цель и задачи исследования.')
                     page.locator('#chat-document').set_input_files({'name': 'private.docx', 'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'buffer': content})
                     expect(page.locator('#chat-attachment-name')).to_have_text('private.docx')
                     page.locator('#send').click()  # No typed question: use default review request.
                     expect(page.locator('.document-review')).to_contain_text('Times New Roman')
                     expect(page.locator('.message.assistant .message-text')).to_contain_text('ДЕМО')
+                    expect(page.locator('.message.assistant .message-text')).to_contain_text('нецензурная лексика')
+                    expect(page.locator('.document-review')).to_contain_text('Важные замечания: проверка лексики')
                     assert requests[-1]['attachment']['name'] == 'private.docx'
+                    with page.expect_download() as download_info:
+                        page.locator('.download-reviewed-document').click()
+                    download = download_info.value
+                    exported = Document(download.path())
+                    assert len(exported.comments) >= 1
+                    assert any('Проверка лексики' in c.text and c.paragraphs[0].text == 'Важные замечания и ошибки' for c in exported.comments)
+                    assert 'PRIVATE-CHECK-729' in exported.paragraphs[1].text
+                    assert download.suggested_filename.endswith('.docx')
                     assert page.request.get(url + '/api/materials').json() == []
                     stored = page.evaluate('localStorage.getItem("aiboturfu.chats.v1")')
                     assert 'UEsDB' not in stored and 'PRIVATE-CHECK-729' not in stored
@@ -56,10 +67,15 @@ def main():
                     expect(page.locator('#chat-attachment')).to_be_hidden()
                     page.locator('#chat-document').set_input_files({'name': 'private.docx', 'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'buffer': content})
                     expect(page.locator('#chat-attachment')).to_be_visible()
+                    with page.expect_download() as download_info:
+                        page.locator('.download-reviewed-document').first.click()
+                    assert len(Document(download_info.value.path()).comments) >= 1
                     page.reload()
                     page.locator('#history .history-open').nth(1).click()
                     expect(page.locator('#chat-attachment')).to_be_hidden()
                     expect(page.locator('.document-review')).to_have_count(2)
+                    page.locator('.download-reviewed-document').first.click()
+                    expect(page.locator('.message.assistant').first.locator('[role="status"]')).to_contain_text('прикрепите тот же')
                     page.locator('[data-theme-toggle]').click()
                     page.set_viewport_size({'width': 390, 'height': 844})
                     page.locator('#chat-document').set_input_files({'name': 'private.docx', 'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'buffer': content})

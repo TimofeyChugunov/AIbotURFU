@@ -71,8 +71,10 @@ $('#chat-document').addEventListener('change', async event => {
       reader.onerror = () => reject(new Error('Не удалось прочитать DOCX.'));
       reader.readAsDataURL(file);
     });
+    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    const sha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
     if (epoch !== accountEpoch || version !== attachmentVersion) return;
-    pendingAttachment = {name: file.name, content};
+    pendingAttachment = {name: file.name, content, sha256};
     $('#attachment-feedback').textContent = 'Задайте вопрос о работе или отправьте файл для общей проверки.';
   } catch (error) {
     if (epoch === accountEpoch && version === attachmentVersion) $('#attachment-feedback').textContent = error.message;
@@ -235,7 +237,84 @@ function appendMessage(message) {
       });
       details.append(label, list);
     }
+    if (Array.isArray(review.content_comments) && review.content_comments.length) {
+      const label = document.createElement('strong'); label.textContent = 'Важные замечания: проверка лексики';
+      const list = document.createElement('ul');
+      review.content_comments.slice(0, 30).forEach(comment => {
+        if (!comment || typeof comment.text !== 'string') return;
+        const item = document.createElement('li');
+        item.textContent = `Абзац ${comment.paragraph}: ${comment.text}`;
+        list.append(item);
+      });
+      details.append(label, list);
+    }
+    if (Array.isArray(review.language_comments) && review.language_comments.length) {
+      const label = document.createElement('strong'); label.textContent = 'Проверка языка и случайных вставок';
+      const list = document.createElement('ul');
+      review.language_comments.slice(0, 30).forEach(comment => {
+        if (!comment || typeof comment.text !== 'string') return;
+        const item = document.createElement('li');
+        item.textContent = `Абзац ${comment.paragraph}: ${comment.text}`;
+        list.append(item);
+      });
+      details.append(label, list);
+    }
+    if (Array.isArray(review.ai_comments) && review.ai_comments.length) {
+      const label = document.createElement('strong'); label.textContent = 'Замечания ИИ по абзацам';
+      const list = document.createElement('ul');
+      review.ai_comments.slice(0, 12).forEach(comment => {
+        if (!comment || typeof comment.text !== 'string') return;
+        const item = document.createElement('li');
+        const category = {recommendation: 'Рекомендации', important: 'Важное замечание', improvement: 'Что улучшить'}[comment.category] || 'Рекомендации';
+        item.textContent = `${category} · Абзац ${comment.paragraph}: ${comment.text}`;
+        list.append(item);
+      });
+      details.append(label, list);
+    }
     article.append(details);
+    if (typeof review.source_hash === 'string') {
+      const download = document.createElement('button');
+      download.type = 'button';
+      download.className = 'download-reviewed-document';
+      download.textContent = 'Скачать DOCX с комментариями';
+      const status = document.createElement('p');
+      status.className = 'attachment-note';
+      status.setAttribute('role', 'status');
+      download.addEventListener('click', async () => {
+        const attachment = currentAttachment();
+        if (!attachment || attachment.sha256 !== review.source_hash) {
+          status.textContent = 'Для скачивания прикрепите тот же исходный DOCX в этом диалоге. Повторная проверка не нужна.';
+          return;
+        }
+        const epoch = accountEpoch;
+        download.disabled = true;
+        status.textContent = 'Подготовка файла с комментариями…';
+        try {
+          const response = await fetch('/api/chat/document/export', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(30000),
+            body: JSON.stringify({attachment, feedback: {
+              source_hash: review.source_hash, summary: message.text, comments: review.ai_comments || [], demo: message.demo,
+            }}),
+          });
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Не удалось подготовить DOCX.');
+          }
+          const blob = await response.blob();
+          if (epoch !== accountEpoch) return;
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = attachment.name.replace(/\.docx$/i, '') + '_с_комментариями.docx';
+          document.body.append(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+          status.textContent = 'Копия готова. В Word откройте «Рецензирование → Примечания».';
+        } catch (error) {
+          if (epoch === accountEpoch) status.textContent = error.message;
+        } finally { download.disabled = false; }
+      });
+      article.append(download, status);
+    }
   }
   if (Array.isArray(message.sources) && message.sources.length) {
     const sources = document.createElement('div'); sources.className = 'sources';

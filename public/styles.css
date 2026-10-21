@@ -629,6 +629,16 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.download-reviewed-document {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+}
+
 .document-review {
   margin-top: 14px;
   border: 1px solid var(--line);

@@ -71,6 +71,35 @@ class AppTests(unittest.TestCase):
     def upload(self, name='physics.txt', content='Закон Ома: ток равен напряжению, делённому на сопротивление.'.encode()):
         return self.request('/api/materials', {'name': name, 'content': base64.b64encode(content).decode()})
 
+    def test_private_commented_docx_export_is_stateless_and_bound_to_source(self):
+        from test_docx_review import document_bytes
+        raw = document_bytes()
+        attachment = {'name': 'private.docx', 'content': base64.b64encode(raw).decode()}
+        _, result, _ = self.request('/api/chat', {'message': 'Проверь', 'mode': 'report', 'attachment': attachment})
+        feedback = {'source_hash': result['document_review']['source_hash'], 'summary': result['text'], 'demo': True}
+        with patch('local_ai.generate', side_effect=AssertionError('Export must not generate again')):
+            status, binary, headers = self.request('/api/chat/document/export', {'attachment': attachment, 'feedback': feedback})
+        self.assertEqual(status, 200)
+        self.assertTrue(binary.startswith(b'PK'))
+        self.assertIn('attachment;', headers['Content-Disposition'])
+        checked = Document(io.BytesIO(binary))
+        self.assertTrue(len(checked.comments) >= 1)
+        self.assertEqual([p.text for p in checked.paragraphs], [p.text for p in Document(io.BytesIO(raw)).paragraphs])
+        feedback['source_hash'] = 'wrong'
+        self.assertEqual(self.request('/api/chat/document/export', {'attachment': attachment, 'feedback': feedback})[0], 400)
+        self.assertEqual(self.request('/api/chat/document/export')[0], 404)
+        self.assertEqual(self.request('/api/materials')[1], [])
+
+    def test_program_lexical_warning_is_shown_even_when_model_misses_it(self):
+        from test_docx_review import document_bytes
+        attachment = {'name': 'private.docx', 'content': base64.b64encode(document_bytes('Введение. ПИЗДОЙ. Описание цели работы.')).decode()}
+        with patch.dict(os.environ, {'AI_MODE': 'ollama'}), patch('local_ai.generate', return_value=('Замечаний нет.', [])):
+            status, result, _ = self.request('/api/chat', {'message': 'Проверь', 'mode': 'report', 'attachment': attachment})
+        self.assertEqual(status, 200)
+        self.assertIn('Программная проверка: важные замечания', result['text'])
+        self.assertIn('нецензурная лексика', result['text'])
+        self.assertEqual(result['document_review']['content_comments'][0]['category'], 'important')
+
     def test_private_docx_demo_report_is_not_a_shared_material(self):
         from test_docx_review import document_bytes
         attachment = {'name': 'private.docx', 'content': base64.b64encode(document_bytes()).decode()}
