@@ -87,7 +87,11 @@ function renderHistory() {
     list.append(note);
   }
   chats.forEach(chat => {
+    const row = document.createElement('div');
+    row.className = 'history-row';
     const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'history-open';
     button.textContent = chat.title;
     button.title = chat.title;
     button.addEventListener('click', () => {
@@ -97,7 +101,29 @@ function renderHistory() {
       renderMessages();
       closeMenu();
     });
-    list.append(button);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'history-delete';
+    remove.textContent = '×';
+    remove.title = 'Удалить диалог';
+    remove.setAttribute('aria-label', `Удалить диалог «${chat.title}»`);
+    remove.disabled = busy;
+    remove.addEventListener('click', () => {
+      if (busy || !confirm(`Удалить диалог «${chat.title}» из этого браузера?`)) return;
+      const index = chats.findIndex(item => item.id === chat.id);
+      chats = chats.filter(item => item.id !== chat.id);
+      if (current?.id === chat.id) {
+        current = null;
+        $('#prompt').value = '';
+        renderMessages();
+      }
+      save();
+      renderHistory();
+      const remaining = list.querySelectorAll('.history-open');
+      (remaining[Math.min(index, remaining.length - 1)] || $('#new-chat')).focus();
+    });
+    row.append(button, remove);
+    list.append(row);
   });
 }
 function appendMessage(message) {
@@ -267,6 +293,7 @@ $('#chat-form').addEventListener('submit', async e => {
     current.messages.pop(); save();
   } finally {
     pending.remove(); busy = false; $('#send').disabled = false; $('#mode-select').disabled = false;
+    renderHistory();
     scrollToEnd(); $('#prompt').focus();
   }
 });

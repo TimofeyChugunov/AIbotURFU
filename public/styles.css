@@ -161,6 +161,9 @@ button:focus-visible,a:focus-visible,select:focus-visible,label.file-button:focu
   padding: 2px 6px;
   border-radius: 5px;
   font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .history-top {
@@ -197,6 +200,33 @@ button:focus-visible,a:focus-visible,select:focus-visible,label.file-button:focu
   overflow: hidden;
   text-overflow: ellipsis;
   border-radius: 7px;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.history .history-open {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.history .history-delete {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.history .history-delete:hover {
+  color: #ae5d57;
 }
 
 .empty-history {
