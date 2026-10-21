@@ -351,7 +351,9 @@ class Handler(BaseHTTPRequestHandler):
                          '/auth': 'auth.html', '/auth/': 'auth.html', '/auth.js': 'auth.js', '/auth.css': 'auth.css',
                          '/styles.css': 'styles.css', '/app.js': 'app.js', '/admin.js': 'admin.js',
                          '/theme.js': 'theme.js', '/theme.css': 'theme.css',
-                         '/assets/logo.png': 'assets/logo.png'}
+                         '/assets/logo.png': 'assets/logo.png',
+                         '/assets/presentation.png': 'assets/presentation.png',
+                         '/assets/report.png': 'assets/report.png'}
                 if path in files:
                     suffix = Path(files[path]).suffix
                     types = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png'}
